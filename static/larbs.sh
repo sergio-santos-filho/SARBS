@@ -6,8 +6,8 @@
 
 ### OPTIONS AND VARIABLES ###
 
-dotfilesrepo="https://github.com/lukesmithxyz/voidrice.git"
-progsfile="https://raw.githubusercontent.com/LukeSmithxyz/LARBS/master/static/progs.csv"
+dotfilesrepo="https://github.com/sergio-santos-filho/meuarroz.git"
+progsfile="https://raw.githubusercontent.com/sergio-santos-filho/SARBS/master/static/progs.csv"
 aurhelper="yay"
 repobranch="master"
 export TERM=ansi
@@ -72,6 +72,7 @@ adduserandpass() {
 	export repodir="/home/$name/.local/src"
 	mkdir -p "$repodir"
 	chown -R "$name":wheel "$(dirname "$repodir")"
+	usermod -a -G video "$name" # permite controalr o brilho a tela
 	echo "$name:$pass1" | chpasswd
 	unset pass1 pass2
 }
@@ -190,59 +191,7 @@ vimplugininstall() {
 	sudo -u "$name" nvim -c "PlugInstall|q|q"
 }
 
-makeuserjs(){
-	# Get the Arkenfox user.js and prepare it.
-	arkenfox="$pdir/arkenfox.js"
-	overrides="$pdir/user-overrides.js"
-	userjs="$pdir/user.js"
-	ln -fs "/home/$name/.config/firefox/larbs.js" "$overrides"
-	[ ! -f "$arkenfox" ] && curl -sL "https://raw.githubusercontent.com/arkenfox/user.js/master/user.js" > "$arkenfox"
-	cat "$arkenfox" "$overrides" > "$userjs"
-	chown "$name:wheel" "$arkenfox" "$userjs"
-	# Install the updating script.
-	mkdir -p /usr/local/lib /etc/pacman.d/hooks
-	cp "/home/$name/.local/bin/arkenfox-auto-update" /usr/local/lib/
-	chown root:root /usr/local/lib/arkenfox-auto-update
-	chmod 755 /usr/local/lib/arkenfox-auto-update
-	# Trigger the update when needed via a pacman hook.
-	echo "[Trigger]
-Operation = Upgrade
-Type = Package
-Target = firefox
-Target = librewolf
-Target = librewolf-bin
-[Action]
-Description=Update Arkenfox user.js
-When=PostTransaction
-Depends=arkenfox-user.js
-Exec=/usr/local/lib/arkenfox-auto-update" > /etc/pacman.d/hooks/arkenfox.hook
-}
 
-installffaddons(){
-	addonlist="ublock-origin decentraleyes istilldontcareaboutcookies vim-vixen"
-	addontmp="$(mktemp -d)"
-	trap "rm -fr $addontmp" HUP INT QUIT TERM PWR EXIT
-	IFS=' '
-	sudo -u "$name" mkdir -p "$pdir/extensions/"
-	for addon in $addonlist; do
-		if [ "$addon" = "ublock-origin" ]; then
-			addonurl="$(curl -sL https://api.github.com/repos/gorhill/uBlock/releases/latest | grep -E 'browser_download_url.*\.firefox\.xpi' | cut -d '"' -f 4)"
-		else
-			addonurl="$(curl --silent "https://addons.mozilla.org/en-US/firefox/addon/${addon}/" | grep -o 'https://addons.mozilla.org/firefox/downloads/file/[^"]*')"
-		fi
-		file="${addonurl##*/}"
-		sudo -u "$name" curl -LOs "$addonurl" > "$addontmp/$file"
-		id="$(unzip -p "$file" manifest.json | grep "\"id\"")"
-		id="${id%\"*}"
-		id="${id##*\"}"
-		mv "$file" "$pdir/extensions/$id.xpi"
-	done
-	chown -R "$name:$name" "$pdir/extensions"
-	# Fix a Vim Vixen bug with dark mode not fixed on upstream:
-	sudo -u "$name" mkdir -p "$pdir/chrome"
-	[ ! -f  "$pdir/chrome/userContent.css" ] && sudo -u "$name" echo ".vimvixen-console-frame { color-scheme: light !important; }
-#category-more-from-mozilla { display: none !important }" > "$pdir/chrome/userContent.css"
-}
 
 finalize() {
 	whiptail --title "All done!" \
@@ -301,6 +250,9 @@ sed -Ei "s/^#(ParallelDownloads).*/\1 = 5/;/^#Color$/s/#//" /etc/pacman.conf
 # Use all cores for compilation.
 sed -i "s/-j2/-j$(nproc)/;/^#MAKEFLAGS/s/^#//" /etc/makepkg.conf
 
+#permite instalar yay
+echo "Defaults:%root runcwd=*" >/etc/sudoers.d/03-larbs-wheel-can-cwd
+
 manualinstall $aurhelper || error "Failed to install AUR helper."
 
 # Make sure .*-git AUR packages get updated automatically.
@@ -330,11 +282,6 @@ sudo -u "$name" mkdir -p "/home/$name/.cache/zsh/"
 sudo -u "$name" mkdir -p "/home/$name/.config/abook/"
 sudo -u "$name" mkdir -p "/home/$name/.config/mpd/playlists/"
 
-# dbus UUID must be generated for Artix runit.
-dbus-uuidgen >/var/lib/dbus/machine-id
-
-# Use system notifications for Brave on Artix
-echo "export \$(dbus-launch)" >/etc/profile.d/dbus.sh
 
 # Enable tap to click
 [ ! -f /etc/X11/xorg.conf.d/40-libinput.conf ] && printf 'Section "InputClass"
@@ -345,26 +292,6 @@ echo "export \$(dbus-launch)" >/etc/profile.d/dbus.sh
 	# Enable left mouse button by tapping
 	Option "Tapping" "on"
 EndSection' >/etc/X11/xorg.conf.d/40-libinput.conf
-
-# All this below to get Librewolf installed with add-ons and non-bad settings.
-
-whiptail --infobox "Setting browser privacy settings and add-ons..." 7 60
-
-browserdir="/home/$name/.librewolf"
-profilesini="$browserdir/profiles.ini"
-
-# Start librewolf headless so it generates a profile. Then get that profile in a variable.
-sudo -u "$name" librewolf --headless >/dev/null 2>&1 &
-sleep 1
-profile="$(sed -n "/Default=.*.default-default/ s/.*=//p" "$profilesini")"
-pdir="$browserdir/$profile"
-
-[ -d "$pdir" ] && makeuserjs
-
-[ -d "$pdir" ] && installffaddons
-
-# Kill the now unnecessary librewolf instance.
-pkill -u "$name" librewolf
 
 # Allow wheel users to sudo with password and allow several system commands
 # (like `shutdown` to run without password).
