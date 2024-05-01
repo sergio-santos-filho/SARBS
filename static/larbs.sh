@@ -11,7 +11,7 @@ progsfile="https://raw.githubusercontent.com/sergio-santos-filho/SARBS/master/st
 aurhelper="yay"
 repobranch="master"
 export TERM=ansi
-
+sarbsrepo="https://github.com/sergio-santos-filho/SARBS.git"
 ### FUNCTIONS ###
 
 installpkg() {
@@ -134,6 +134,22 @@ gitmakeinstall() {
 	cd "$dir" || exit 1
 	make >/dev/null 2>&1
 	make install >/dev/null 2>&1
+	cd /tmp || return 1
+}
+
+gitclonesarbs() {
+	progname="${sarbsrepo##*/}"
+	progname="${progname%.git}"
+	dir="$repodir/$progname"
+	whiptail --title "LARBS Installation" \
+		--infobox "Clonando \`$progname\` ($n of $total) via \`git\`. $(basename "$1") $2" 8 70
+	sudo -u "$name" git -C "$repodir" clone --depth 1 --single-branch \
+		--no-tags -q "$1" "$dir" ||
+		{
+			cd "$dir" || return 1
+			sudo -u "$name" git pull --force origin master
+		}
+	cd "$dir" || exit 1
 	cd /tmp || return 1
 }
 
@@ -269,7 +285,7 @@ installationloop
 # other unnecessary files.
 putgitrepo "$dotfilesrepo" "/home/$name" "$repobranch"
 rm -rf "/home/$name/.git/" "/home/$name/README.md" "/home/$name/LICENSE" "/home/$name/FUNDING.yml"
-
+gitclonesarbs
 # Install vim plugins if not alread present.
 [ ! -f "/home/$name/.config/nvim/autoload/plug.vim" ] && vimplugininstall
 
@@ -301,6 +317,7 @@ echo "%wheel ALL=(ALL:ALL) NOPASSWD: /usr/bin/shutdown,/usr/bin/reboot,/usr/bin/
 echo "Defaults editor=/usr/bin/nvim" >/etc/sudoers.d/02-larbs-visudo-editor
 mkdir -p /etc/sysctl.d
 echo "kernel.dmesg_restrict = 0" > /etc/sysctl.d/dmesg.conf
-
+#Conserta conflito de sons ( desliga pelo systemctl)
+sudo systemctl --global disable wireplumber pipewire-pulse pipewire
 # Last message! Install complete!
 finalize
